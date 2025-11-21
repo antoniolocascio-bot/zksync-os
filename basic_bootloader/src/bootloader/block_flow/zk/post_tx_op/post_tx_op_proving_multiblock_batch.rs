@@ -13,6 +13,7 @@ use zk_ee::common_structs::{ProofData, WarmStorageKey};
 use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
+use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
@@ -185,6 +186,13 @@ where
             io.interop_root_storage.iter(),
             settlement_layer_chain_id,
         );
+
+        // we do this query for consistency with block based input generation(there is empty iterator as response to this query)
+        // but during proving this request shouldn't have the effect with "u32 array based" oracle
+        #[allow(unused_must_use)]
+        io.oracle
+            .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
+            .expect("must disconnect an oracle before performing arbitrary CSR access");
 
         Ok(io.oracle)
     }
