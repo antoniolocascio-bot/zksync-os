@@ -37,7 +37,6 @@ use forward_system::system::bootloader::run_prover_input_no_panic;
 use log::{debug, info, trace};
 use oracle_provider::MemorySource;
 use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
-use risc_v_simulator::abstractions::memory::VectorMemoryImpl;
 use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
 use ruint::aliases::{B160, B256, U256};
 use std::alloc::Global;
@@ -225,41 +224,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn set_block_hashes(&mut self, block_hashes: [U256; 256]) {
         self.block_hashes = block_hashes
-    }
-
-    /// TODO: duplicated from API, unify.
-    /// Runs a block in riscV - using zksync_os binary - and returns the
-    /// witness that can be passed to the prover subsystem.
-    pub fn run_block_generate_witness<const FLAMEGRAPH: bool>(
-        oracle: ZkEENonDeterminismSource<VectorMemoryImpl>,
-        app: &Option<String>,
-    ) -> Vec<u32> {
-        // We'll wrap the source, to collect all the reads.
-        let copy_source = ReadWitnessSource::new(oracle);
-        let items = copy_source.get_read_items();
-        // By default - enable diagnostics is false (which makes the test run faster).
-        let path = get_zksync_os_img_path(app);
-
-        let diagnostics_config = if FLAMEGRAPH {
-            let mut profiler_config = ProfilerConfig::new("flamegraph.svg".into());
-            profiler_config.frequency_recip = 10;
-
-            Some(profiler_config).map(|cfg| {
-                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(app));
-                diagnostics_cfg.profiler_config = Some(cfg);
-                diagnostics_cfg
-            })
-        } else {
-            None
-        };
-
-        let output = zksync_os_runner::run(path, diagnostics_config, 1 << 36, copy_source);
-
-        // We return 0s in case of failure.
-        assert_ne!(output, [0u32; 8]);
-
-        let result = items.borrow().clone();
-        result
     }
 
     ///
@@ -562,6 +526,17 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             copy_source, &mut result_keeper_prover_input, &mut tracer
         )?;
 
+        if let Some(path) = witness_output_file {
+            let mut file = File::create(&path).expect("should create file");
+            let witness: Vec<u8> = prover_input_forward
+                .iter()
+                .flat_map(|x| x.to_be_bytes())
+                .collect();
+            let hex = hex::encode(witness);
+            file.write_all(hex.as_bytes())
+                .expect("should write to file");
+        }
+
         // We use the result keeper from prover input run, as this one has the right
         // pubdata.
         let block_output: BlockOutput = result_keeper_prover_input.into();
@@ -615,102 +590,91 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         }
 
         let proof_input = if !only_forward {
-            if let Some(path) = witness_output_file {
-                let result = Self::run_block_generate_witness::<false>(oracle, &app);
-                let mut file = File::create(&path).expect("should create file");
-                let witness: Vec<u8> = result.iter().flat_map(|x| x.to_be_bytes()).collect();
-                let hex = hex::encode(witness);
-                file.write_all(hex.as_bytes())
-                    .expect("should write to file");
-                result
-            } else {
-                // We'll wrap the source, to collect all the reads.
-                let copy_source = ReadWitnessSource::new(oracle);
-                let items = copy_source.get_read_items();
+            // We'll wrap the source, to collect all the reads.
+            let copy_source = ReadWitnessSource::new(oracle);
+            let items = copy_source.get_read_items();
 
-                let diagnostics_config = profiler_config.map(|cfg| {
-                    let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(&app));
-                    diagnostics_cfg.profiler_config = Some(cfg);
-                    diagnostics_cfg
-                });
+            let diagnostics_config = profiler_config.map(|cfg| {
+                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(&app));
+                diagnostics_cfg.profiler_config = Some(cfg);
+                diagnostics_cfg
+            });
 
-                let now = std::time::Instant::now();
-                let (proof_output, block_effective) = {
-                    zksync_os_runner::run_and_get_effective_cycles(
-                        get_zksync_os_img_path(&app),
-                        diagnostics_config,
-                        1 << 36,
-                        copy_source,
-                    )
-                };
+            let now = std::time::Instant::now();
+            let (proof_output, block_effective) = {
+                zksync_os_runner::run_and_get_effective_cycles(
+                    get_zksync_os_img_path(&app),
+                    diagnostics_config,
+                    1 << 36,
+                    copy_source,
+                )
+            };
 
-                info!(
-                    "Simulator without witness tracing executed over {:?}",
-                    now.elapsed()
-                );
-                stats.effective_used = block_effective;
+            info!(
+                "Simulator without witness tracing executed over {:?}",
+                now.elapsed()
+            );
+            stats.effective_used = block_effective;
 
-                #[cfg(feature = "simulate_witness_gen")]
-                {
-                    zksync_os_runner::simulate_witness_tracing(
-                        get_zksync_os_img_path(),
-                        source_for_witness_bench,
-                    )
-                }
-
-                // dump csr reads if env var set
-                if let Ok(output_csr) = std::env::var("CSR_READS_DUMP") {
-                    // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
-                    let mut file =
-                        File::create(&output_csr).expect("Failed to create csr reads file");
-                    // Write each u32 as an 8-character hexadecimal string without newlines
-                    for num in items.borrow().iter() {
-                        write!(file, "{num:08X}").expect("Failed to write to file");
-                    }
-                    debug!(
-                        "Successfully wrote {} u32 csr reads elements to file: {}",
-                        items.borrow().len(),
-                        output_csr
-                    );
-                }
-
-                let proof_input = items.borrow().iter().copied().collect::<Vec<u32>>();
-
-                debug!(
-                    "{}Proof running output{} = 0x",
-                    colors::GREEN,
-                    colors::RESET
-                );
-                for word in proof_output.into_iter() {
-                    debug!("{word:08x}");
-                }
-
-                // Ensure that proof running didn't fail: check that output is not zero
-                assert!(proof_output.into_iter().any(|word| word != 0));
-                let proof_output_u8: [u8; 32] = unsafe { core::mem::transmute(proof_output) };
-
-                if check_storage_diff_hashes {
-                    // Also ensure that storage diff hash matches
-                    use crypto::MiniDigest;
-                    let mut hasher = crypto::blake2s::Blake2s256::new();
-                    for StorageWrite { key, value, .. } in block_output.storage_writes.iter() {
-                        hasher.update(key.0.as_ref());
-                        hasher.update(value.0.as_ref());
-                    }
-                    let forward_storage_diff_hash = hasher.finalize();
-                    info!(
-                        "Forward storage diff hash: 0x{}",
-                        hex::encode(forward_storage_diff_hash.as_ref())
-                    );
-                    assert_eq!(proof_output_u8, forward_storage_diff_hash);
-
-                    #[cfg(feature = "e2e_proving")]
-                    run_prover(items.borrow().as_slice());
-                }
-
-                assert_eq!(prover_input_forward, proof_input);
-                proof_input
+            #[cfg(feature = "simulate_witness_gen")]
+            {
+                zksync_os_runner::simulate_witness_tracing(
+                    get_zksync_os_img_path(),
+                    source_for_witness_bench,
+                )
             }
+
+            // dump csr reads if env var set
+            if let Ok(output_csr) = std::env::var("CSR_READS_DUMP") {
+                // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
+                let mut file = File::create(&output_csr).expect("Failed to create csr reads file");
+                // Write each u32 as an 8-character hexadecimal string without newlines
+                for num in items.borrow().iter() {
+                    write!(file, "{num:08X}").expect("Failed to write to file");
+                }
+                debug!(
+                    "Successfully wrote {} u32 csr reads elements to file: {}",
+                    items.borrow().len(),
+                    output_csr
+                );
+            }
+
+            let proof_input = items.borrow().iter().copied().collect::<Vec<u32>>();
+
+            debug!(
+                "{}Proof running output{} = 0x",
+                colors::GREEN,
+                colors::RESET
+            );
+            for word in proof_output.into_iter() {
+                debug!("{word:08x}");
+            }
+
+            // Ensure that proof running didn't fail: check that output is not zero
+            assert!(proof_output.into_iter().any(|word| word != 0));
+            let proof_output_u8: [u8; 32] = unsafe { core::mem::transmute(proof_output) };
+
+            if check_storage_diff_hashes {
+                // Also ensure that storage diff hash matches
+                use crypto::MiniDigest;
+                let mut hasher = crypto::blake2s::Blake2s256::new();
+                for StorageWrite { key, value, .. } in block_output.storage_writes.iter() {
+                    hasher.update(key.0.as_ref());
+                    hasher.update(value.0.as_ref());
+                }
+                let forward_storage_diff_hash = hasher.finalize();
+                info!(
+                    "Forward storage diff hash: 0x{}",
+                    hex::encode(forward_storage_diff_hash.as_ref())
+                );
+                assert_eq!(proof_output_u8, forward_storage_diff_hash);
+
+                #[cfg(feature = "e2e_proving")]
+                run_prover(items.borrow().as_slice());
+            }
+
+            assert_eq!(prover_input_forward, proof_input);
+            proof_input
         } else {
             vec![]
         };
