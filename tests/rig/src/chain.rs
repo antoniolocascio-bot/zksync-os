@@ -69,7 +69,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-        use_native_modexp_oracle: bool,
+        use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource<M>;
 }
 
@@ -88,7 +88,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-        use_native_modexp_oracle: bool,
+        use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource<M> {
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
@@ -98,7 +98,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             proof_data,
             da_commitment_scheme,
             add_uart,
-            use_native_modexp_oracle,
+            use_native_callable_oracles,
         )
     }
 }
