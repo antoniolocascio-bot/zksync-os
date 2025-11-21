@@ -35,8 +35,9 @@ impl<O: IOOracle, const PROOF_ENV: bool> SystemTypes for ForwardSystemTypes<O, P
         O,
         PROOF_ENV,
     >;
-    type SystemFunctions = NoStdSystemFunctions;
-    type SystemFunctionsExt = NoStdSystemFunctions;
+    // For PROOF_ENV=true, we can enable delegation-based modexp to capture prover input.
+    type SystemFunctions = NoStdSystemFunctions<PROOF_ENV>;
+    type SystemFunctionsExt = NoStdSystemFunctions<PROOF_ENV>;
     type Allocator = Global;
     type Logger = Logger;
     type Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata;

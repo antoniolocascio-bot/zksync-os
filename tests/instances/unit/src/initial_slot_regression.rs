@@ -133,6 +133,7 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
+        _use_native_modexp_oracle: bool,
     ) -> ZkEENonDeterminismSource<M> {
         // Create a malicious oracle manually instead of using the default factory
         let block_metadata_responder = BlockMetadataResponder { block_metadata };

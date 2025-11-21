@@ -32,6 +32,7 @@ use forward_system::system::bootloader::run_forward_no_panic;
 use forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
+use forward_system::system::bootloader::run_prover_input_no_panic;
 use log::{debug, info, trace};
 use oracle_provider::MemorySource;
 use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
@@ -68,6 +69,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
+        use_native_modexp_oracle: bool,
     ) -> ZkEENonDeterminismSource<M>;
 }
 
@@ -86,6 +88,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
+        use_native_modexp_oracle: bool,
     ) -> ZkEENonDeterminismSource<M> {
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
@@ -95,6 +98,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
             proof_data,
             da_commitment_scheme,
             add_uart,
+            use_native_modexp_oracle,
         )
     }
 }
@@ -106,7 +110,7 @@ pub struct Chain<const RANDOMIZED_TREE: bool = false> {
     state_tree: InMemoryTree<RANDOMIZED_TREE>,
     pub preimage_source: InMemoryPreimageSource,
     chain_id: u64,
-    previous_block_number: Option<u64>,
+    previous_block_number: u64,
     block_hashes: [U256; 256],
     block_timestamp: u64,
 }
@@ -173,7 +177,7 @@ impl Chain<false> {
                 inner: HashMap::new(),
             },
             chain_id: chain_id.unwrap_or(37),
-            previous_block_number: None,
+            previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
         }
@@ -196,7 +200,7 @@ impl Chain<true> {
                 inner: HashMap::new(),
             },
             chain_id: chain_id.unwrap_or(37),
-            previous_block_number: None,
+            previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
         }
@@ -211,11 +215,11 @@ pub struct BlockExtraStats {
 
 impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     pub fn set_last_block_number(&mut self, prev: u64) {
-        self.previous_block_number = Some(prev)
+        self.previous_block_number = prev
     }
 
     pub fn next_block_number(&self) -> u64 {
-        self.previous_block_number.map(|n| n + 1).unwrap_or(0)
+        self.previous_block_number + 1
     }
 
     pub fn set_block_hashes(&mut self, block_hashes: [U256; 256]) {
@@ -497,6 +501,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             Some(proof_data),
             Some(da_commitment_scheme),
             true,
+            false,
         );
 
         let forward_oracle = oracle_factory.create_oracle(
@@ -506,6 +511,18 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             tx_source.clone(),
             Some(proof_data),
             Some(da_commitment_scheme),
+            true,
+            false,
+        );
+
+        let prover_input_oracle = oracle_factory.create_oracle(
+            block_metadata,
+            self.state_tree.clone(),
+            self.preimage_source.clone(),
+            tx_source.clone(),
+            Some(proof_data),
+            Some(da_commitment_scheme),
+            false,
             true,
         );
 
@@ -534,7 +551,19 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             validator,
         )?;
 
-        let block_output: BlockOutput = result_keeper.into();
+        let mut result_keeper_prover_input = ForwardRunningResultKeeper::new(NoopTxCallback);
+
+        let copy_source = ReadWitnessSource::new(prover_input_oracle);
+        let mut tracer = NopTracer::default();
+        let prover_input_forward = run_prover_input_no_panic::<
+            BasicBootloaderProvingExecutionConfig,
+        >(
+            copy_source, &mut result_keeper_prover_input, &mut tracer
+        )?;
+
+        // We use the result keeper from prover input run, as this one has the right
+        // pubdata.
+        let block_output: BlockOutput = result_keeper_prover_input.into();
 
         trace!(
             "{}Block output:{} \n{:#?}",
@@ -562,7 +591,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         }
 
         // update state
-        self.previous_block_number = Some(self.next_block_number());
+        self.previous_block_number = self.next_block_number();
         self.block_timestamp = block_context.timestamp;
         for i in 0..255 {
             self.block_hashes[i] = self.block_hashes[i + 1];
@@ -678,6 +707,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                     run_prover(items.borrow().as_slice());
                 }
 
+                assert_eq!(prover_input_forward, proof_input);
                 proof_input
             }
         } else {
