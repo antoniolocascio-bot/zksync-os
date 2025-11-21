@@ -27,6 +27,7 @@ use forward_system::run::query_processors::InMemoryEthereumInitialStorageSlotVal
 use forward_system::run::query_processors::TxDataResponder;
 use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
+use forward_system::run::result_keeper::ProverInputResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
 use forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
@@ -551,7 +552,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             validator,
         )?;
 
-        let mut result_keeper_prover_input = ForwardRunningResultKeeper::new(NoopTxCallback);
+        let mut result_keeper_prover_input = ProverInputResultKeeper::new(NoopTxCallback);
 
         let copy_source = ReadWitnessSource::new(prover_input_oracle);
         let mut tracer = NopTracer::default();
