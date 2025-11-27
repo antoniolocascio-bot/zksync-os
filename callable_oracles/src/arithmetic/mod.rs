@@ -115,6 +115,9 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
 /// Works in a similar way as the ArithmeticQuery, but with
 /// 64 bit pointers. Importantly, the query response is the
 /// same.
+///
+/// This processor explicitly reads the process memory
+/// using a raw pointer to get the input.
 pub struct NativeArithmeticQuery<M: MemorySource> {
     _marker: std::marker::PhantomData<M>,
 }

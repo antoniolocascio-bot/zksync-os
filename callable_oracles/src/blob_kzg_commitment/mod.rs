@@ -63,6 +63,13 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BlobCommitmentAndProofQuery<M>
     }
 }
 
+/// Query processor to be used for prover input native run
+/// Works in a similar way as the NativeBlobCommitmentAndProof, but with
+/// 64 bit pointers. Importantly, the query response is the
+/// same.
+///
+/// This processor explicitly reads the process memory
+/// using a raw pointer to get the input.
 pub struct NativeBlobCommitmentAndProofQuery<M: MemorySource> {
     _marker: std::marker::PhantomData<M>,
 }
