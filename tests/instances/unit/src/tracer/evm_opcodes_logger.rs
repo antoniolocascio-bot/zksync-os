@@ -60,7 +60,7 @@ fn run_chain_with_tracer_and_validator<V>(
         chain.run_block_with_extra_stats(vec![encoded_tx], None, None, None, tracer, validator);
 
     assert!(result.is_ok(), "Block execution should succeed");
-    let (block_output, _, _) = result.unwrap();
+    let (block_output, _, _, _) = result.unwrap();
     assert!(
         block_output.tx_results[0].is_ok(),
         "Transaction should succeed. Result: {:?}",

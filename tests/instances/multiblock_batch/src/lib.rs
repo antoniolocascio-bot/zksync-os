@@ -92,10 +92,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     let batch_input = generate_batch_proof_input(
         vec![block1_result.2.as_slice(), block2_result.2.as_slice()],
         da_commitment_scheme,
-        vec![
-            block1_result.0.pubdata.as_slice(),
-            block2_result.0.pubdata.as_slice(),
-        ],
+        vec![block1_result.3.as_slice(), block2_result.3.as_slice()],
     );
 
     let multinblock_program_path = PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())

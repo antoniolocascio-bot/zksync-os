@@ -105,6 +105,7 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     Ok(result_keeper.into())
 }
 
+// Returns (prover_input, block_output, pubdata)
 pub fn generate_proof_input<
     T: ReadStorageTree,
     PS: PreimageSource,
@@ -118,7 +119,7 @@ pub fn generate_proof_input<
     preimage_source: PS,
     tx_source: TS,
     tx_result_callback: TR,
-) -> Result<(Vec<u32>, BlockOutput), ForwardSubsystemError> {
+) -> Result<(Vec<u32>, BlockOutput, Vec<u8>), ForwardSubsystemError> {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
@@ -162,8 +163,10 @@ pub fn generate_proof_input<
         &mut tracer,
     )
     .map_err(|e| wrap_error!(e))?;
+    // Take pubdata, as it's not part of BlockOutput
+    let pubdata = std::mem::take(&mut result_keeper.pubdata);
 
-    Ok((prover_input, result_keeper.into()))
+    Ok((prover_input, result_keeper.into(), pubdata))
 }
 
 // TODO(EVM-1184): in future we should generate input per batch
