@@ -29,6 +29,8 @@ fn bytereverse(input: &mut [u8]) {
 ///
 /// No std system functions implementations.
 /// All of them are following EVM specs(for precompiles and keccak opcode).
+/// USE_ADVICE const parameter affects only the forward run, as advice
+/// is always used for proving one.
 ///
 pub struct NoStdSystemFunctions<const USE_ADVICE: bool>;
 
