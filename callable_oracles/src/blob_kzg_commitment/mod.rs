@@ -103,7 +103,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeBlobCommitmentAndProofQu
         let data_len = it.next().unwrap();
         assert!(
             it.next().is_none(),
-            "A single RISC-V ptr should've been passed."
+            "Only a pointer and the length are expected."
         );
         let data = unsafe { crate::read_u8_words(data_ptr as u64, data_len as u64) };
         let result = blob_kzg_commitment_and_proof(&data);
