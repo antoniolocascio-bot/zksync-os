@@ -48,6 +48,8 @@ state-diffs-pi = []
 hex = {version = "0.4.3"}
 proptest = "1.6.0"
 crypto = { path = "../crypto", default-features = false, features = ["secp256k1-static-context", "testing"]}
+callable_oracles = { path = "../callable_oracles" }
+oracle_provider = { path = "../oracle_provider" }
 num-bigint = "*"
 num-traits = "*"
 arbitrary = { version = "1", features = ["derive"] }
