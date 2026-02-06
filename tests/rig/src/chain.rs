@@ -30,10 +30,10 @@ use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::result_keeper::ProverInputResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
+use forward_system::system::bootloader::run_prover_input_no_panic;
 use forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
-use forward_system::system::bootloader::run_prover_input_no_panic;
 use log::{debug, info, trace};
 use oracle_provider::MemorySource;
 use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
@@ -323,6 +323,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 da_commitment_scheme,
                 run_config,
                 &mut NopTracer::default(),
+                &mut NopTxValidator,
             )
             .unwrap();
         (r, pubdata)
@@ -544,11 +545,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let copy_source = ReadWitnessSource::new(prover_input_oracle);
         let mut tracer = NopTracer::default();
-        let prover_input_forward = run_prover_input_no_panic::<
-            BasicBootloaderProvingExecutionConfig,
-        >(
-            copy_source, &mut result_keeper_prover_input, &mut tracer
-        )?;
+        let mut validator = NopTxValidator;
+        let prover_input_forward =
+            run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
+                copy_source,
+                &mut result_keeper_prover_input,
+                &mut tracer,
+                &mut validator,
+            )?;
 
         if let Some(path) = witness_output_file {
             let mut file = File::create(&path).expect("should create file");

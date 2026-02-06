@@ -146,8 +146,13 @@ impl<TR: TxResultCallback>
     }
 }
 
-impl<TR: TxResultCallback> From<ProverInputResultKeeper<TR>> for BlockOutput {
-    fn from(value: ProverInputResultKeeper<TR>) -> Self {
+impl<TR: TxResultCallback>
+    From<ProverInputResultKeeper<TR, basic_bootloader::bootloader::block_header::BlockHeader>>
+    for BlockOutput
+{
+    fn from(
+        value: ProverInputResultKeeper<TR, basic_bootloader::bootloader::block_header::BlockHeader>,
+    ) -> Self {
         BlockOutput::from(value.forward_running_rk)
     }
 }

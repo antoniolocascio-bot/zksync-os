@@ -112,7 +112,7 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
     );
 
     assert!(result.is_ok());
-    let (out, _, _) = result.unwrap();
+    let (out, _, _, _) = result.unwrap();
 
     println!(
         "[TxValidator] totals: begin_calls={}, finish_calls={}",
@@ -199,7 +199,7 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
     );
 
     assert!(result.is_ok());
-    let (out, _, _) = result.unwrap();
+    let (out, _, _, _) = result.unwrap();
 
     // 1) Both tx must succeed
     assert!(
@@ -265,7 +265,7 @@ fn test_l1_transactions_are_not_filtered_by_validator() {
     );
 
     assert!(result.is_ok());
-    let (out, _, _) = result.unwrap();
+    let (out, _, _, _) = result.unwrap();
 
     println!(
         "[TxValidator] totals: begin_calls={}, finish_calls={}",
@@ -349,7 +349,7 @@ fn test_tx_validator_filters_out_tx_on_begin_tx() {
     );
 
     assert!(result.is_ok());
-    let (out, _, _) = result.unwrap();
+    let (out, _, _, _) = result.unwrap();
 
     println!(
         "[TxValidator] totals: begin_calls={}, finish_calls={}",

@@ -1133,5 +1133,4 @@ dependencies = [
 [[package]]
 name = "zksync_os_evm_errors"
 version = "0.0.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fea4915ff8302cbd66403de07518fe4025fbcacd3d3d1760cc03029e710586a"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-prover-input-gen#2360123fb71863072ec398900d33f8ad6866f8f8"
