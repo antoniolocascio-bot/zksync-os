@@ -23,9 +23,9 @@ use crate::run::query_processors::{BlockMetadataResponder, DACommitmentSchemeRes
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;
 use crate::system::bootloader::run_prover_input_no_panic;
-use crate::system::system_types::ForwardRunningSystem;
-use crate::system::system_types::CallSimulationSystem;
 use crate::system::system_types::CallSimulationBootloader;
+use crate::system::system_types::CallSimulationSystem;
+use crate::system::system_types::ForwardRunningSystem;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
     BasicBootloaderProvingExecutionConfig,
@@ -304,13 +304,15 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
         oracle.add_external_processor(
             callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery::default(),
         );
+        oracle
+            .add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery::default());
     } else {
         oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
         oracle.add_external_processor(
             callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
         );
+        oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
     }
-    oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
 
     if add_uart {
         let uart_responder = UARTPrintResponder;
