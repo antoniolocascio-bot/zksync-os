@@ -31,7 +31,7 @@ use forward_system::run::result_keeper::ProverInputResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
 use forward_system::system::bootloader::run_prover_input_no_panic;
-use forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
+use forward_system::system::system_types::ethereum::EthereumStorageSystemTypes;
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
 use log::{debug, info, trace};
@@ -892,8 +892,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let mut nop_validator = NopTxValidator;
 
         BasicBootloader::<
-            EthereumStorageSystemTypesWithPostOps<_>,
-            EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
+            EthereumStorageSystemTypes<_>,
+            EthereumTransactionFlow<EthereumStorageSystemTypes<_>>,
         >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
             oracle,
             &mut (),

@@ -10476,14 +10476,12 @@ checksum = "95ddc4ac82441385017e569ee1b060502a2af4d78c4fb7b24bcee70b0b96e6a3"
 [[package]]
 name = "zksync_os_evm_errors"
 version = "0.0.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fea4915ff8302cbd66403de07518fe4025fbcacd3d3d1760cc03029e710586a"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-prover-input-gen#2360123fb71863072ec398900d33f8ad6866f8f8"
 
 [[package]]
 name = "zksync_os_interface"
 version = "0.0.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46c449cd98de3bd8891e092f336b61b0b35fd84a8a5eb95ce0be1fb5a006fd27"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-prover-input-gen#2360123fb71863072ec398900d33f8ad6866f8f8"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
