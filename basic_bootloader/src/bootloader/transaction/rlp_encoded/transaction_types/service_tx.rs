@@ -2,7 +2,9 @@ use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::{Rlp, RlpListDecode};
 use crate::bootloader::transaction::rlp_encoded::transaction_types::EthereumTxType;
 use ruint::aliases::B160;
-use system_hooks::addresses_constants::{L2_INTEROP_ROOT_STORAGE_ADDRESS, SYSTEM_CONTEXT_ADDRESS};
+use system_hooks::addresses_constants::{
+    L2_INTEROP_CENTER_ADDRESS, L2_INTEROP_ROOT_STORAGE_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
+};
 
 /// ZKsync OS service (type 0x7d) transaction .
 /// Used for system operations, such as importing interop roots.
@@ -18,8 +20,11 @@ pub(crate) struct ServiceTx<'a> {
     salt: u64, // Some salt used by the server to identify service transactions. Ignored by ZKsync OS.
 }
 
-const SERVICE_DESTINATION_WHITELIST: &[B160] =
-    &[L2_INTEROP_ROOT_STORAGE_ADDRESS, SYSTEM_CONTEXT_ADDRESS];
+const SERVICE_DESTINATION_WHITELIST: &[B160] = &[
+    L2_INTEROP_ROOT_STORAGE_ADDRESS,
+    SYSTEM_CONTEXT_ADDRESS,
+    L2_INTEROP_CENTER_ADDRESS,
+];
 
 pub const SERVICE_TX_TYPE: u8 = 0x7d;
 
