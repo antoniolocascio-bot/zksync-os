@@ -9,3 +9,7 @@ This directory contains the following subdirectories:
 - `forge` - forge project with test solidity contracts
 - `instances` - test cases implemented using rig
 - `fuzzer`
+
+## Writing tests
+
+For conventions and examples of writing new `tests/instances/*` cases, see `tests/TESTING.md`.
