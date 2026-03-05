@@ -93,7 +93,7 @@ where
 
     // EIP-7623
     let (calldata_tokens, minimal_gas_used) = compute_calldata_tokens(system, calldata, false);
-    #[cfg(feature = "eip_7623")]
+    #[cfg(feature = "eip-7623")]
     require!(
         minimal_gas_used <= tx_gas_limit,
         InvalidTransaction::EIP7623IntrinsicGasIsTooLow,
@@ -465,7 +465,7 @@ pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
         L2_TX_INTRINSIC_GAS
     };
 
-    #[cfg(feature = "eip_7623")]
+    #[cfg(feature = "eip-7623")]
     {
         let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
         let intrinsic_gas = intrinsic_gas.saturating_add(floor_tokens_gas_cost);
@@ -473,7 +473,7 @@ pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
         (num_tokens, intrinsic_gas)
     }
 
-    #[cfg(not(feature = "eip_7623"))]
+    #[cfg(not(feature = "eip-7623"))]
     {
         (num_tokens, intrinsic_gas)
     }
