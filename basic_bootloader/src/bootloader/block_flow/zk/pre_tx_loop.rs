@@ -10,10 +10,19 @@ where
     type PreTxLoopResult = ZKBasicBlockDataKeeper<EA>;
 
     fn pre_op(
-        _system: &mut System<S>,
+        system: &mut System<S>,
         _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
     ) -> Self::PreTxLoopResult {
-        // Just create data keeper
+        // EIP-2935: store parent block hash in history storage contract
+        #[cfg(feature = "eip-2935")]
+        {
+            use crate::bootloader::block_flow::eip_2935_historical_block_hash::eip2935_system_part;
+            eip2935_system_part(system).expect("must perform EIP-2935");
+        }
+        #[cfg(not(feature = "eip-2935"))]
+        let _ = system;
+
+        // Create data keeper
         ZKBasicBlockDataKeeper::new()
     }
 }
