@@ -1,3 +1,4 @@
+# Bench workflow: runs benchmarks and posts comparison comment on PRs.
 name: "Compare performance to base branch"
 
 on:
