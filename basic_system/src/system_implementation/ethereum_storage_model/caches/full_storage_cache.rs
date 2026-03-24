@@ -64,17 +64,23 @@ impl<
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
+        is_access_list: bool,
     ) -> Result<(), SystemError> {
-        // TODO(EVM-1076): use a different low-level function to avoid creating pubdata
-        // and merkle proof obligations until we actually read the value
-
         let key = WarmStorageKey {
             address: *address,
             key: *key,
         };
 
-        self.slot_values
-            .apply_read_impl(ee_type, &key, resources, oracle)?;
+        if is_access_list {
+            // For static access list slots (EIP-2930): just record the key as warm.
+            // Don't materialize from oracle — the value will be read on first actual
+            // SLOAD/SSTORE. The warm-up cost is already covered by intrinsic gas.
+            self.slot_values.tx_static_access_list_slots.insert(key);
+        } else {
+            self.slot_values
+                .apply_read_impl(ee_type, &key, resources, oracle)?;
+        }
+
         Ok(())
     }
 

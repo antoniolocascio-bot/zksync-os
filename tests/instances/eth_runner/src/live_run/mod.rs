@@ -1,6 +1,6 @@
 use anyhow::Result;
 mod db;
-mod rpc;
+pub(crate) mod rpc;
 mod utils;
 mod statistics;
 mod prefetch;

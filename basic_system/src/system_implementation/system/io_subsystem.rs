@@ -541,9 +541,16 @@ impl<
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        is_access_list: bool,
     ) -> Result<(), SystemError> {
-        self.storage
-            .storage_touch(ee_type, resources, address, key, &mut self.oracle)
+        self.storage.storage_touch(
+            ee_type,
+            resources,
+            address,
+            key,
+            &mut self.oracle,
+            is_access_list,
+        )
     }
 
     fn touch_account(

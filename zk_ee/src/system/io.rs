@@ -387,12 +387,14 @@ pub trait IOSubsystemExt: IOSubsystem {
     fn finish_tx(&mut self) -> Result<(), InternalError>;
 
     /// Touch a slot (address, key) to make it warm.
+    /// If `is_access_list` is true, the slot is pre-charged without materializing from the oracle.
     fn storage_touch(
         &mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        is_access_list: bool,
     ) -> Result<(), SystemError>;
 
     /// Perform a transfer of token balance.

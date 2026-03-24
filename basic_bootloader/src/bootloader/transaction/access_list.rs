@@ -54,6 +54,7 @@ where
                         resources,
                         &address,
                         &Bytes32::from_array(*key),
+                        true, // is_access_list
                     )
                 })?;
             }

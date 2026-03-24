@@ -117,10 +117,10 @@ impl<
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
-        // TODO: maybe recover is_access_list?
+        is_access_list: bool,
     ) -> Result<(), SystemError> {
         self.storage_cache
-            .touch(ee_type, resources, address, key, oracle)
+            .touch(ee_type, resources, address, key, oracle, is_access_list)
     }
 
     fn storage_write(

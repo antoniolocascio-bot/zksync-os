@@ -63,7 +63,9 @@ use crate::revm_consistency_checker::{generate_block_context_interface, ChainSta
 
 static INIT_LOGGER_ONCE: Once = Once::new();
 pub fn init_logger() {
-    INIT_LOGGER_ONCE.call_once(env_logger::init);
+    INIT_LOGGER_ONCE.call_once(|| {
+        env_logger::try_init().ok();
+    });
 }
 
 #[allow(dead_code)]
