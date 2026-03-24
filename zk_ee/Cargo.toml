@@ -35,5 +35,7 @@ error_origins = []
 detailed_errors = []
 prevrandao = []
 pectra-blobs = []
+fusaka-blobs = []
+eip-7825 = []
 
 [dev-dependencies]
