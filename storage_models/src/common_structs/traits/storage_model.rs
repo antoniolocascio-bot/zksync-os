@@ -41,6 +41,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
+        is_access_list: bool,
     ) -> Result<(), SystemError>;
 
     /// Writes a value to contract storage. Returns the old value.

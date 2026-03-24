@@ -63,6 +63,12 @@ pub struct GenericPubdataAwarePlainStorage<
 > {
     pub(crate) cache:
         HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A, CacheElementProperties>,
+    /// Slots declared in the transaction's static access list (EIP-2930).
+    /// These are pre-warmed without materializing from the oracle — the actual
+    /// oracle read is deferred until the slot is first accessed via SLOAD/SSTORE.
+    /// This is NOT the dynamic "accessed storage keys" set from the EVM spec;
+    /// it only tracks the static list declared in the transaction envelope.
+    pub(crate) tx_static_access_list_slots: alloc::collections::BTreeSet<K, A>,
     pub(crate) resources_policy: P,
     // Note: this doesn't need to be equal to the actual tx number in the block, it just needs to be able to differentiate between transactions.
     pub(crate) current_tx_id: TransactionId,
@@ -88,6 +94,7 @@ impl<
     pub fn new_from_parts(allocator: A, resources_policy: P) -> Self {
         Self {
             cache: HistoryMap::new(allocator.clone()),
+            tx_static_access_list_slots: alloc::collections::BTreeSet::new_in(allocator.clone()),
             current_tx_id: TransactionId(0),
             resources_policy,
             evm_refunds_counter: NonEmptyHistoryCounter::new_with_initial(
@@ -101,6 +108,7 @@ impl<
 
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
+        self.tx_static_access_list_slots.clear();
         self.evm_refunds_counter =
             NonEmptyHistoryCounter::new_with_initial(self.alloc.clone(), R::empty());
     }
@@ -139,6 +147,7 @@ impl<
             A,
             CacheElementProperties,
         >,
+        tx_static_access_list_slots: &alloc::collections::BTreeSet<K, A>,
         resources_policy: &mut P,
         current_tx_id: TransactionId,
         ee_type: ExecutionEnvironmentType,
@@ -185,8 +194,11 @@ impl<
                 ))
             })
             .and_then(|mut x| {
-                // Warm up element according to EVM rules if needed
-                let is_warm_read = x.current().metadata().considered_warm(current_tx_id);
+                // Warm up element according to EVM rules if needed.
+                // Also treat slots from the tx's static access list (EIP-2930) as warm —
+                // their warm-up cost is already included in the tx intrinsic gas.
+                let is_warm_read = x.current().metadata().considered_warm(current_tx_id)
+                    || tx_static_access_list_slots.contains(key);
                 if is_warm_read == false {
                     if initialized_element == false {
                         let is_new_storage_slot = x.element_properties().is_new_element();
@@ -222,6 +234,7 @@ impl<
     {
         let (addr_data, _) = Self::materialize_element(
             &mut self.cache,
+            &self.tx_static_access_list_slots,
             &mut self.resources_policy,
             self.current_tx_id,
             ee_type,
@@ -246,6 +259,7 @@ impl<
     {
         let (mut addr_data, is_warm_read) = Self::materialize_element(
             &mut self.cache,
+            &self.tx_static_access_list_slots,
             &mut self.resources_policy,
             self.current_tx_id,
             ee_type,
