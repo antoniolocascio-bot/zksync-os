@@ -154,18 +154,11 @@ fn modexp_as_system_function_inner<
         )));
     };
 
-    // Handle a special case when both the base and mod length are zero.
-    if base_len == 0 && mod_len == 0 {
-        // should be safe, since we checked that there is enough resources at the beginning
-        resources.charge(&minimal_resources)?;
-        return Ok(());
-    }
+    // NOTE: no early exit for base_len == 0 && mod_len == 0. Under EIP-7883 repricing,
+    // multiplication_complexity is a fixed 16 for small inputs, and the exponent can still
+    // contribute to iteration_count, so the gas formula must always be evaluated.
 
     // Cast exponent length to usize, since it does not make sense to handle larger values.
-    //
-    // At this point base_len != 0 || mod_len != 0
-    // So, on 32 bit machine precompile will cost at least around ~ 2^32*8/3 ~= 1e10 gas,
-    // so should be ok in practice
     let Ok(exp_len) = usize::try_from(exp_len) else {
         return Err(SubsystemError::LeafUsage(interface_error!(
             ModExpInterfaceError::InvalidInputLength
