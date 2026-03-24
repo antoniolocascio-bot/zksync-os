@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 mod block;
 mod block_hashes;
 mod calltrace;
+mod eth_stf_witgen;
 mod live_run;
 mod native_model;
 mod post_check;
@@ -88,6 +89,25 @@ enum Command {
         #[arg(long)]
         block_dir: String,
     },
+    /// Run ETH STF witness generation for debugging.
+    /// Fetches block and execution witness from L1, and attempts to generate witness.
+    EthStfWitGen {
+        /// Path to a local block directory (block.json + witness.json)
+        #[arg(long)]
+        block_dir: Option<String>,
+        /// Save fetched data to disk
+        #[arg(long)]
+        save: bool,
+        /// Block number to fetch (decimal, hex with 0x prefix, or "latest")
+        #[arg(long)]
+        block_number: Option<String>,
+        /// Reth RPC endpoint URL
+        #[arg(long)]
+        reth_endpoint: String,
+        /// Run continuously, processing blocks in sequence
+        #[arg(long)]
+        cont: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -137,5 +157,19 @@ fn main() -> anyhow::Result<()> {
         Command::ExportRatios { db, path } => live_run::export_block_ratios(db, path),
         Command::ShowStatus { db } => live_run::show_status(db),
         Command::EthRun { block_dir } => crate::single_run::eth_run(block_dir),
+        Command::EthStfWitGen {
+            block_dir,
+            block_number,
+            reth_endpoint,
+            save,
+            cont,
+        } => {
+            if cont {
+                crate::eth_stf_witgen::run_cont(reth_endpoint)?;
+            } else {
+                crate::eth_stf_witgen::run(block_dir, reth_endpoint, block_number, save)?;
+            }
+            Ok(())
+        }
     }
 }

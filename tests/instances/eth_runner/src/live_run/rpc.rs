@@ -158,6 +158,62 @@ pub fn get_block_hashes_batch(endpoint: &str, block_numbers: &[u64]) -> Result<s
     Ok(all_hashes)
 }
 
+/// Fetches the latest block number.
+pub fn get_block_number(endpoint: &str) -> Result<u64> {
+    debug!("RPC: eth_blockNumber()");
+    let body = json!({
+        "method": "eth_blockNumber",
+        "params": [],
+        "id": 1,
+        "jsonrpc": "2.0"
+    });
+    let res = send(endpoint, body)?;
+    let res: serde_json::Value = serde_json::from_str(&res)?;
+    let hex = res["result"]
+        .as_str()
+        .ok_or_else(|| anyhow!("No block number in response"))?;
+    let num = u64::from_str_radix(hex.trim_start_matches("0x"), 16)?;
+    Ok(num)
+}
+
+/// Fetches a full block by number (with transactions).
+pub fn get_block(endpoint: &str, block_number: u64) -> Result<Block> {
+    debug!("RPC: get_block({block_number})");
+    let body = json!({
+        "method": "eth_getBlockByNumber",
+        "params": [to_hex(block_number), true],
+        "id": 1,
+        "jsonrpc": "2.0"
+    });
+    let res = send(endpoint, body)?;
+    let block: Block = serde_json::from_str(&res)?;
+    Ok(block)
+}
+
+/// JSON-RPC response wrapper for witness data.
+#[derive(Deserialize)]
+pub struct JsonResponse<T> {
+    pub result: T,
+}
+
+/// Fetches execution witness for a block.
+pub fn get_witness(
+    endpoint: &str,
+    block_number: u64,
+) -> Result<JsonResponse<alloy_rpc_types_debug::ExecutionWitness>> {
+    debug!("RPC: debug_executionWitness({block_number})");
+    let body = json!({
+        "method": "debug_executionWitness",
+        "params": [to_hex(block_number)],
+        "id": 1,
+        "jsonrpc": "2.0"
+    });
+    let res = send(endpoint, body)?;
+    let witness: JsonResponse<alloy_rpc_types_debug::ExecutionWitness> =
+        serde_json::from_str(&res)?;
+    Ok(witness)
+}
+
 /// Fetches the chain ID from the RPC endpoint.
 pub fn get_chain_id(endpoint: &str) -> Result<u64> {
     debug!("RPC: eth_chainId()");
