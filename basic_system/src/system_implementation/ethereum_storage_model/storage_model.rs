@@ -94,6 +94,12 @@ impl<
         }
     }
 
+    fn commitment_from_state_root(root: Bytes32) -> Self::StorageCommitment {
+        // The Ethereum (MPT) model's commitment is just the root; foreign static
+        // calls are exercised with the flat model in the PoC.
+        root
+    }
+
     fn pubdata_used_by_tx(&self) -> u32 {
         0
     }

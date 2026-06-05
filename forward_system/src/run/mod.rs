@@ -45,6 +45,7 @@ use std::sync::Arc;
 use zk_ee::common_structs::ProofData;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::utils::Bytes32;
 
 pub use interface_impl::RunBlockForward;
 pub use tree::LeafProof;
@@ -323,6 +324,7 @@ pub fn make_oracle_for_proofs_and_dumps<
     block_context: BlockContext,
     tree: T,
     foreign_trees: BTreeMap<u64, T>,
+    foreign_roots: BTreeMap<u64, Bytes32>,
     preimage_source: PS,
     tx_source: TS,
     fri_proof_sidecar: FS,
@@ -336,6 +338,7 @@ pub fn make_oracle_for_proofs_and_dumps<
         block_context,
         tree,
         foreign_trees,
+        foreign_roots,
         preimage_source,
         tx_source,
         fri_proof_sidecar,
@@ -356,6 +359,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     block_context: BlockContext,
     tree: T,
     foreign_trees: BTreeMap<u64, T>,
+    foreign_roots: BTreeMap<u64, Bytes32>,
     preimage_source: PS,
     tx_source: TS,
     fri_proof_sidecar: FS,
@@ -381,6 +385,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
             .into_iter()
             .map(|(chain, t)| (chain, ReadTreeResponder { tree: t }))
             .collect(),
+        foreign_roots,
         selected: None,
     };
     let fri_proof_responder = FriProofResponder {

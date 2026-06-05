@@ -225,6 +225,10 @@ pub trait StorageModel: Sized + SnapshottableIo {
     /// Constructs a new storage model instance from initialization data and an allocator.
     fn construct(init_data: Self::InitData, allocator: Self::Allocator) -> Self;
 
+    /// PoC: build a storage commitment for a foreign chain from its committed
+    /// foreign state root, used to verify that chain's foreign read-set at the seal.
+    fn commitment_from_state_root(root: Bytes32) -> Self::StorageCommitment;
+
     /// Get amount of pubdata needed to encode current tx diff in bytes.
     fn pubdata_used_by_tx(&self) -> u32;
 

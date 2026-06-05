@@ -7,7 +7,7 @@ use basic_system::system_implementation::flat_storage_model::{
 use std::collections::BTreeMap;
 use zk_ee::common_structs::derive_flat_storage_key;
 use zk_ee::common_structs::foreign_read::{
-    ForeignStorageAddress, FOREIGN_VALUE_QUERY_ID, SELECT_FOREIGN_CHAIN_QUERY_ID,
+    FOREIGN_STATE_ROOT_QUERY_ID, SELECT_FOREIGN_CHAIN_QUERY_ID,
 };
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::storage_types::InitialStorageSlotData;
@@ -120,22 +120,22 @@ impl<T: ReadStorageTree> OracleQueryProcessor for ReadTreeResponder<T> {
 /// Routes flat-tree queries to per-chain trees so foreign (cross-chain) reads can
 /// reuse the real verifier. Wraps one [`ReadTreeResponder`] per chain plus the
 /// local one:
-/// - `FOREIGN_VALUE_QUERY_ID`: returns a value from a specific chain's tree
-///   (used during execution);
-/// - `SELECT_FOREIGN_CHAIN_QUERY_ID`: selects which chain subsequent index/proof
-///   queries target (`0` = local; used at the seal);
+/// - `SELECT_FOREIGN_CHAIN_QUERY_ID`: selects which chain subsequent tree queries
+///   target (`0` = local); set around the foreign frame and at the seal;
 /// - every other tree query is delegated to the selected chain's responder.
 pub struct ForeignRoutingTreeResponder<T: ReadStorageTree> {
     pub local: ReadTreeResponder<T>,
     pub foreign: BTreeMap<u64, ReadTreeResponder<T>>,
+    /// Committed state root per foreign chain (answers `ForeignStateRootQuery`).
+    pub foreign_roots: BTreeMap<u64, Bytes32>,
     pub selected: Option<u64>,
 }
 
 impl<T: ReadStorageTree> OracleQueryProcessor for ForeignRoutingTreeResponder<T> {
     fn supported_query_ids(&self) -> Vec<u32> {
         let mut ids = self.local.supported_query_ids();
-        ids.push(FOREIGN_VALUE_QUERY_ID);
         ids.push(SELECT_FOREIGN_CHAIN_QUERY_ID);
+        ids.push(FOREIGN_STATE_ROOT_QUERY_ID);
         ids
     }
 
@@ -151,21 +151,14 @@ impl<T: ReadStorageTree> OracleQueryProcessor for ForeignRoutingTreeResponder<T>
             self.selected = if chain == 0 { None } else { Some(chain) };
             return DynUsizeIterator::from_constructor((), UsizeSerializable::iter);
         }
-        if query_id == FOREIGN_VALUE_QUERY_ID {
-            let req =
-                <ForeignStorageAddress as UsizeDeserializable>::from_iter(&mut query.into_iter())
-                    .expect("foreign storage address");
-            let inner = self
-                .foreign
-                .get_mut(&req.chain_id)
-                .expect("no foreign tree for requested chain");
-            // Re-serialize as a plain StorageAddress and reuse the inner responder.
-            let serialized: Vec<usize> = UsizeSerializable::iter(&req.address).collect();
-            return inner.process_buffered_query(
-                InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID,
-                serialized,
-                memory,
-            );
+        if query_id == FOREIGN_STATE_ROOT_QUERY_ID {
+            let chain =
+                <u64 as UsizeDeserializable>::from_iter(&mut query.into_iter()).expect("chain id");
+            let root = *self
+                .foreign_roots
+                .get(&chain)
+                .expect("no foreign state root for chain");
+            return DynUsizeIterator::from_constructor(root, UsizeSerializable::iter);
         }
         let inner = match self.selected {
             Some(c) => self
