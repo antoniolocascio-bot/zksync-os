@@ -6,6 +6,8 @@ use core::fmt::Write;
 use core::mem::MaybeUninit;
 use errors::internal::InternalError;
 use ruint::aliases::B160;
+use ruint::aliases::U256;
+use system_hooks::addresses_constants::FOREIGN_STATICCALL_ADDRESS;
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::error_ctx;
@@ -118,6 +120,13 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
     where
         S::IO: IOSubsystemExt,
     {
+        // PoC: foreign static call entry. A call to the reserved address runs the
+        // target's code in a read-only frame whose storage reads are served from
+        // the requested chain and verified against its committed interop root.
+        if call_request.callee == FOREIGN_STATICCALL_ADDRESS {
+            return self.handle_foreign_static_call(call_request, heap, tracer, validator);
+        }
+
         system_log!(
             self.system,
             "External call or deploy to {:?}\n",
@@ -196,6 +205,82 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
             resources_returned: resources_in_caller_frame,
             result: call_result,
         })
+    }
+
+    /// PoC: execute a foreign static call. Decodes `(chain_id, to, data)` from the
+    /// calldata, opens a foreign-read scope on the IO, and runs `to`'s code as a
+    /// STATIC frame so every storage read is served from `chain_id` and verified
+    /// against its committed interop root. The callee's bytecode is loaded locally
+    /// (production would also load + verify the foreign bytecode).
+    fn handle_foreign_static_call(
+        &mut self,
+        call_request: ExternalCallRequest<S>,
+        heap: SliceVec<u8>,
+        tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
+    ) -> Result<CompletedExecution<'external, S>, BootloaderSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        let ExternalCallRequest {
+            available_resources,
+            ergs_to_pass,
+            caller,
+            callers_caller,
+            input,
+            call_scratch_space,
+            ..
+        } = call_request;
+
+        // Decode calldata: chain_id (32) || to (32, right-aligned) || data.
+        // Revert on malformed input.
+        let decoded = if input.len() >= 64 {
+            match (
+                U256::try_from_be_slice(&input[0..32]),
+                B160::try_from_be_slice(&input[44..64]),
+            ) {
+                (Some(chain_id), Some(to)) => Some((chain_id, to)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let (chain_id, to) = match decoded {
+            Some(decoded) => decoded,
+            None => {
+                return Ok(CompletedExecution {
+                    resources_returned: available_resources,
+                    result: CallResult::Failed {
+                        return_values: ReturnValues::empty(),
+                    },
+                })
+            }
+        };
+
+        let foreign_request = ExternalCallRequest {
+            available_resources,
+            ergs_to_pass,
+            caller,
+            callee: to,
+            callers_caller,
+            modifier: CallModifier::Static,
+            input: &input[64..],
+            nominal_token_value: Default::default(),
+            call_scratch_space,
+        };
+
+        // Storage reads in the nested frame (and any sub-calls it makes) are
+        // served from `chain_id` for the duration of the call.
+        let previous = self.system.io.begin_foreign_read_scope(chain_id);
+        let result = self.handle_requested_external_call::<false>(
+            ExecutionEnvironmentType::EVM,
+            foreign_request,
+            heap,
+            tracer,
+            validator,
+        );
+        self.system.io.end_foreign_read_scope(previous);
+        result
     }
 
     /// Internal implementation of call execution. Requires prepared external_call_launch_params which include all required data for EE launch.

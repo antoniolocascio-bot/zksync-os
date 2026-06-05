@@ -16,4 +16,3 @@
 extern crate alloc;
 
 pub mod common_structs;
-pub mod foreign_reads;

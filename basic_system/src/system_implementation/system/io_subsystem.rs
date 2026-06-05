@@ -1,6 +1,8 @@
 //! Implementation of the IO subsystem.
 use super::*;
 use crate::system_functions::keccak256::keccak256_native_cost;
+use crate::system_implementation::flat_storage_model::{FlatStorageCommitment, TREE_HEIGHT};
+use alloc::collections::BTreeMap;
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
@@ -14,18 +16,21 @@ use evm_interpreter::gas_constants::LOGTOPIC;
 use evm_interpreter::gas_constants::TLOAD;
 use evm_interpreter::gas_constants::TSTORE;
 use interop_roots::per_root_computational_native_cost;
+use ruint::aliases::B160;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
 use zk_ee::common_structs::new_settlement_layer_chain_id_storage::NewSettlementLayerChainIdStorage;
+use zk_ee::common_structs::WarmStorageValue;
 use zk_ee::common_structs::{
     GenericEventContentRef, GenericEventContentWithTxRef, GenericLogContentWithTxRef,
     L2_TO_L1_LOG_SERIALIZE_SIZE,
 };
 use zk_ee::interface_error;
 use zk_ee::out_of_ergs_error;
+use zk_ee::storage_types::InitialStorageSlotData;
 use zk_ee::{
     common_structs::{EventsStorage, LogsStorage},
     system::{
@@ -35,6 +40,9 @@ use zk_ee::{
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::UsizeAlignedByteBox,
 };
+
+/// PoC native cost for verifying a foreign-read inclusion proof (~depth hashes).
+const FOREIGN_READ_VERIFY_NATIVE_COST: u64 = 8192;
 
 pub struct FullIO<
     A: Allocator + Clone + Default,
@@ -56,6 +64,13 @@ pub struct FullIO<
     pub oracle: O,
     pub tx_number: u32,
     pub da_commitment_scheme: Option<DACommitmentScheme>,
+    /// PoC: chain whose storage plain reads are served from while a foreign
+    /// static call is executing (`None` = local, normal behavior).
+    pub foreign_read_chain: Option<U256>,
+    /// PoC: per-chain log of foreign reads `(key -> value)`, verified in bulk at
+    /// the seal against each chain's committed interop root.
+    pub foreign_reads:
+        BTreeMap<U256, BTreeMap<WarmStorageKey, InitialStorageSlotData<EthereumIOTypesConfig>>>,
 }
 
 pub struct FullIOStateSnapshot<M: StorageModel> {
@@ -64,6 +79,119 @@ pub struct FullIOStateSnapshot<M: StorageModel> {
     messages: usize,
     events: usize,
     interop_roots: usize,
+}
+
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+        SF: StackFactory<N>,
+        const N: usize,
+        O: IOOracle,
+        M: StorageModel<IOTypes = EthereumIOTypesConfig, Resources = R, InitData = P, Allocator = A>,
+        const PROOF_ENV: bool,
+    > FullIO<A, R, P, SF, N, O, M, PROOF_ENV>
+{
+    /// PoC: record a deferred foreign read of `chain_id`'s state. The value is
+    /// trusted now (pulled from chain C's tree via a chain-tagged query) and
+    /// logged; the whole foreign read-set is verified against the chain's
+    /// committed root at the seal (see `verify_foreign_reads`). Bypasses the
+    /// local storage cache; repeated reads of a slot are deduplicated.
+    fn read_foreign_slot(
+        &mut self,
+        resources: &mut R,
+        chain_id: U256,
+        address: &B160,
+        key: &Bytes32,
+    ) -> Result<Bytes32, SystemError> {
+        use zk_ee::common_structs::foreign_read::{ForeignStorageAddress, ForeignValueQuery};
+        use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+        use zk_ee::storage_types::StorageAddress;
+
+        let wkey = WarmStorageKey {
+            address: *address,
+            key: *key,
+        };
+        if let Some(per_chain) = self.foreign_reads.get(&chain_id) {
+            if let Some(data) = per_chain.get(&wkey) {
+                return Ok(data.initial_value);
+            }
+        }
+
+        // EVM cold-SLOAD-like ergs + native (the merkle verification runs at seal).
+        let native = R::Native::from_computational(FOREIGN_READ_VERIFY_NATIVE_COST);
+        resources.charge(&R::from_ergs_and_native(Ergs(2100 * ERGS_PER_GAS), native))?;
+
+        let request = ForeignStorageAddress {
+            chain_id: chain_id.as_limbs()[0],
+            address: StorageAddress {
+                address: *address,
+                key: *key,
+            },
+        };
+        let data = ForeignValueQuery::get(&mut self.oracle, &request)?;
+        let value = data.initial_value;
+        self.foreign_reads
+            .entry(chain_id)
+            .or_default()
+            .insert(wkey, data);
+        Ok(value)
+    }
+
+    /// Seal step: verify every foreign read against its chain's committed interop
+    /// root, reusing the real flat-tree verifier. For each chain we SELECT it on
+    /// the oracle (routing the index/proof queries to its tree) and run
+    /// `verify_and_apply_batch` with that chain's root as the commitment.
+    fn verify_foreign_reads(&mut self, logger: &mut impl Logger) {
+        use zk_ee::common_structs::foreign_read::SelectForeignChainQuery;
+        use zk_ee::common_structs::state_root_view::StateRootView;
+        use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+
+        let foreign_reads = core::mem::take(&mut self.foreign_reads);
+        let allocator = self.allocator.clone();
+        for (chain_id, reads) in foreign_reads.iter() {
+            if reads.is_empty() {
+                continue;
+            }
+
+            // Committed root for this source chain (from interop roots).
+            let root = self
+                .interop_root_storage
+                .iter()
+                .filter(|r| r.chain_id == *chain_id)
+                .map(|r| r.root)
+                .last()
+                .expect("no committed interop root for a foreign chain that was read");
+
+            // Route the index/proof oracle queries to this chain's tree.
+            let cid = chain_id.as_limbs()[0];
+            SelectForeignChainQuery::get(&mut self.oracle, &cid).expect("select foreign chain");
+
+            // next_free_slot is unused for existing-key reads (the PoC case).
+            let mut commitment = FlatStorageCommitment::<TREE_HEIGHT> {
+                root,
+                next_free_slot: 0,
+            };
+            let source = reads.iter().map(|(k, data)| {
+                (
+                    *k,
+                    WarmStorageValue {
+                        initial_value: data.initial_value,
+                        current_value: data.initial_value,
+                        is_new_storage_slot: data.is_new_storage_slot,
+                        initial_value_used: true,
+                        ..Default::default()
+                    },
+                )
+            });
+            commitment
+                .verify_and_apply_batch(&mut self.oracle, source, allocator.clone(), logger)
+                .expect("foreign reads must be consistent with the chain's committed root");
+
+            // Reset routing back to the local tree.
+            SelectForeignChainQuery::get(&mut self.oracle, &0u64).expect("reset foreign chain");
+        }
+    }
 }
 
 impl<
@@ -105,6 +233,10 @@ impl<
             self.transient_storage.apply_read(&key, &mut result)?;
 
             Ok(result)
+        } else if let Some(chain_id) = self.foreign_read_chain {
+            // Inside a foreign static call: serve this read from the foreign
+            // chain's state, verified against its committed interop root.
+            self.read_foreign_slot(resources, chain_id, address, key)
         } else {
             self.storage
                 .storage_read(ee_type, resources, address, key, &mut self.oracle)
@@ -243,6 +375,14 @@ impl<
         resources.charge(&to_charge)?;
 
         self.interop_root_storage.push_root(interop_root)
+    }
+
+    fn begin_foreign_read_scope(&mut self, chain_id: U256) -> Option<U256> {
+        self.foreign_read_chain.replace(chain_id)
+    }
+
+    fn end_foreign_read_scope(&mut self, previous: Option<U256>) {
+        self.foreign_read_chain = previous;
     }
 
     fn update_settlement_layer_chain_id(
@@ -512,6 +652,8 @@ impl<
             tx_number: 0u32,
             da_commitment_scheme,
             new_settlement_layer_chain_id_storage,
+            foreign_read_chain: None,
+            foreign_reads: BTreeMap::new(),
         };
 
         Ok(new)
@@ -821,5 +963,9 @@ impl<
     ) {
         self.storage
             .update_commitment(state_commitment, &mut self.oracle, logger, result_keeper);
+
+        // PoC: verify all cross-chain foreign reads against each chain's committed
+        // interop root, reusing the real flat-tree verifier.
+        self.verify_foreign_reads(logger);
     }
 }

@@ -29,7 +29,7 @@ pub use self::ethereum_initial_storage_slot_value::InMemoryEthereumInitialStorag
 pub use self::fri_proof::{FriProofResponder, FriVerifierArtifacts};
 pub use self::generic_preimage::GenericPreimageResponder;
 pub use self::read_storage::ReadStorageResponder;
-pub use self::read_tree::ReadTreeResponder;
+pub use self::read_tree::{ForeignRoutingTreeResponder, ReadTreeResponder};
 pub use self::tx_data::TxDataResponder;
 pub use self::uart_print::UARTPrintResponder;
 pub use self::zk_proof_data::ZKProofDataResponder;

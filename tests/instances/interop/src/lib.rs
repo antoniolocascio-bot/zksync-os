@@ -4,6 +4,7 @@
 #![cfg(test)]
 
 mod bytecodes;
+mod foreign_static_call;
 
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy::primitives::{address, Address, TxKind, B256 as AlloyB256};
