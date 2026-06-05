@@ -128,6 +128,30 @@ pub fn calculate_interop_roots_rolling_hash<'a>(
     rolling_hash
 }
 
+/// Calculates a rolling hash over the per-chain foreign state roots that foreign
+/// static calls were anchored to, committing them to the public output so the
+/// settlement layer can validate each was the foreign chain's real state root.
+///
+/// For each `(chain_id, root)`: rolling_hash = keccak256(old_rolling_hash || chain_id || root)
+///
+/// Roots must be iterated in a deterministic order (the IO subsystem keeps them
+/// in a `BTreeMap` keyed by chain id, so iteration is sorted by chain id).
+pub fn calculate_foreign_state_roots_rolling_hash<'a>(
+    old_rolling_hash: Bytes32,
+    roots: impl Iterator<Item = (&'a U256, &'a Bytes32)>,
+    hasher: &mut crypto::sha3::Keccak256,
+) -> Bytes32 {
+    let mut rolling_hash = old_rolling_hash;
+    for (chain_id, root) in roots {
+        hasher.update(rolling_hash.as_u8_ref());
+        hasher.update(chain_id.to_be_bytes::<{ U256::BYTES }>());
+        hasher.update(root.as_u8_ref());
+        rolling_hash = hasher.finalize_reset().into();
+    }
+
+    rolling_hash
+}
+
 ///
 /// Reads SL chain id from the SystemContext(0x800b) contract.
 ///

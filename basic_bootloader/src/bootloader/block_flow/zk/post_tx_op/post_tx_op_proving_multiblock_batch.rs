@@ -182,6 +182,7 @@ where
             upgrade_tx_hash,
             multichain_root,
             io.interop_root_storage.iter(),
+            io.foreign_state_roots.iter(),
             settlement_layer_chain_id,
             block_data.current_transaction_number,
         );

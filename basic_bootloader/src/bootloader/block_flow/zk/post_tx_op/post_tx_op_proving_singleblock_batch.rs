@@ -127,6 +127,11 @@ where
             io.interop_root_storage.iter(),
             &mut crypto::sha3::Keccak256::new(),
         );
+        let foreign_state_roots_rolling_hash = calculate_foreign_state_roots_rolling_hash(
+            Bytes32::zero(),
+            io.foreign_state_roots.iter(),
+            &mut crypto::sha3::Keccak256::new(),
+        );
 
         let (mut state_commitment, last_block_timestamp) = {
             let proof_data: ProofData<FlatStorageCommitment<TREE_HEIGHT>> =
@@ -208,6 +213,7 @@ where
             upgrade_tx_hash,
             interop_roots_rolling_hash,
             settlement_layer_chain_id,
+            foreign_state_roots_rolling_hash,
         };
         logger_log!(logger, "PI calculation: batch output {:?}\n", batch_output,);
 

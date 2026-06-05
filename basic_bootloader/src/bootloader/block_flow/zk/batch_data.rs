@@ -1,4 +1,5 @@
 use super::post_tx_op::da_commitment_generator::DACommitmentGenerator;
+use crate::bootloader::block_flow::zk::post_tx_op::calculate_foreign_state_roots_rolling_hash;
 use crate::bootloader::block_flow::zk::post_tx_op::calculate_interop_roots_rolling_hash;
 use crate::bootloader::block_flow::zk::post_tx_op::public_input::{BatchOutput, BatchPublicInput};
 use crate::bootloader::block_flow::{TransactionsRollingKeccakHasher, TxHashesAccumulator};
@@ -31,6 +32,7 @@ pub struct ZKBatchDataKeeper<A: alloc::alloc::Allocator, O: IOOracle> {
     upgrade_tx_hash: Option<Bytes32>,
     multichain_root: Bytes32,
     interop_roots_rolling_hash: Bytes32,
+    foreign_state_roots_rolling_hash: Bytes32,
     settlement_layer_chain_id: Option<U256>,
 }
 
@@ -52,6 +54,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
             upgrade_tx_hash: None,
             multichain_root: Bytes32::zero(),
             interop_roots_rolling_hash: Bytes32::ZERO,
+            foreign_state_roots_rolling_hash: Bytes32::ZERO,
             settlement_layer_chain_id: None,
         }
     }
@@ -69,6 +72,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         upgrade_tx_hash: Bytes32,
         multichain_root: Bytes32,
         interop_roots: impl Iterator<Item = &'a InteropRoot>,
+        foreign_state_roots: impl Iterator<Item = (&'a U256, &'a Bytes32)>,
         settlement_layer_chain_id: U256,
         number_of_txs_in_block: u32,
     ) {
@@ -103,6 +107,12 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         self.interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
             self.interop_roots_rolling_hash,
             interop_roots,
+            &mut crypto::sha3::Keccak256::new(),
+        );
+
+        self.foreign_state_roots_rolling_hash = calculate_foreign_state_roots_rolling_hash(
+            self.foreign_state_roots_rolling_hash,
+            foreign_state_roots,
             &mut crypto::sha3::Keccak256::new(),
         );
     }
@@ -149,6 +159,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
             upgrade_tx_hash: self.upgrade_tx_hash.unwrap(),
             interop_roots_rolling_hash: self.interop_roots_rolling_hash,
             settlement_layer_chain_id: self.settlement_layer_chain_id.unwrap(),
+            foreign_state_roots_rolling_hash: self.foreign_state_roots_rolling_hash,
         };
         let public_input = BatchPublicInput {
             state_before: self.initial_state_commitment.unwrap(),

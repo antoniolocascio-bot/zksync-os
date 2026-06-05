@@ -77,6 +77,11 @@ pub struct BatchOutput {
     pub interop_roots_rolling_hash: Bytes32,
     /// Settlement layer chain id.
     pub settlement_layer_chain_id: U256,
+    /// Linear keccak256 hash of the per-chain foreign state roots that foreign
+    /// static calls in this batch were anchored to. The settlement layer opens
+    /// this to check each `(chain_id, root)` matches the foreign chain's real
+    /// committed state root. Zero if no foreign static calls were made.
+    pub foreign_state_roots_rolling_hash: Bytes32,
 }
 
 impl BatchOutput {
@@ -99,6 +104,7 @@ impl BatchOutput {
         hasher.update(self.upgrade_tx_hash.as_u8_ref());
         hasher.update(self.interop_roots_rolling_hash.as_u8_ref());
         hasher.update(self.settlement_layer_chain_id.to_be_bytes::<32>());
+        hasher.update(self.foreign_state_roots_rolling_hash.as_u8_ref());
         hasher.finalize()
     }
 }
