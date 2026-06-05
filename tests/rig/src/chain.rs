@@ -118,6 +118,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
             state_tree,
+            std::collections::BTreeMap::new(),
+            std::collections::BTreeMap::new(),
             preimage_source,
             tx_source,
             fri_sidecar,
@@ -145,6 +147,8 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
             state_tree,
+            std::collections::BTreeMap::new(),
+            std::collections::BTreeMap::new(),
             preimage_source,
             tx_source,
             fri_sidecar,

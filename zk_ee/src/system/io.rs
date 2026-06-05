@@ -122,6 +122,22 @@ pub trait IOSubsystem: Sized {
         interop_root: InteropRoot,
     ) -> Result<(), SystemError>;
 
+    /// PoC: enter a "foreign read" scope. While active, plain (non-transient)
+    /// storage reads are served from chain `chain_id`'s state and verified
+    /// against that chain's committed interop root. This is what makes a foreign
+    /// static call read the foreign chain's storage. Returns the previously
+    /// active foreign chain so it can be restored by [`Self::end_foreign_read_scope`].
+    /// Default: no-op (returns `None`).
+    fn begin_foreign_read_scope(&mut self, chain_id: U256) -> Option<U256> {
+        let _ = chain_id;
+        None
+    }
+
+    /// PoC: exit a foreign read scope, restoring the previously active chain.
+    fn end_foreign_read_scope(&mut self, previous: Option<U256>) {
+        let _ = previous;
+    }
+
     /// Update settlement layer chain id.
     fn update_settlement_layer_chain_id(
         &mut self,

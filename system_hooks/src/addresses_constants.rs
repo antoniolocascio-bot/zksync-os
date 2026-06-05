@@ -37,6 +37,14 @@ pub const FRI_PRECOMPILE_ADDRESS_LOW: u16 = 0x7003;
 pub const FRI_PRECOMPILE_ADDRESS: B160 =
     B160::from_limbs([FRI_PRECOMPILE_ADDRESS_LOW as u64, 0, 0]);
 
+// PoC: foreign static-call entry. A STATICCALL to this address with calldata
+// (chain_id, to, data) runs `to`'s code in a read-only frame whose storage reads
+// are served from `chain_id` and verified against its committed interop root.
+// Dispatched in the bootloader runner (not a system hook).
+pub const FOREIGN_STATICCALL_ADDRESS_LOW: u16 = 0x7004;
+pub const FOREIGN_STATICCALL_ADDRESS: B160 =
+    B160::from_limbs([FOREIGN_STATICCALL_ADDRESS_LOW as u64, 0, 0]);
+
 // L2 message root storage contract
 pub const MESSAGE_ROOT_ADDRESS: B160 = B160::from_limbs([0x10005, 0, 0]);
 

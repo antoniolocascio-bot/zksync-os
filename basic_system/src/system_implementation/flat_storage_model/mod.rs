@@ -115,6 +115,14 @@ impl<
         }
     }
 
+    fn commitment_from_state_root(root: Bytes32) -> Self::StorageCommitment {
+        // PoC: next_free_slot is unused for existing-key foreign reads.
+        FlatStorageCommitment {
+            root,
+            next_free_slot: 0,
+        }
+    }
+
     fn pubdata_used_by_tx(&self) -> u32 {
         self.account_data_cache.calculate_pubdata_used_by_tx()
             + self.storage_cache.calculate_pubdata_used_by_tx()

@@ -1,6 +1,7 @@
 //! Implementation of the IO subsystem.
 use super::*;
 use crate::system_functions::keccak256::keccak256_native_cost;
+use alloc::collections::BTreeMap;
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
@@ -56,6 +57,17 @@ pub struct FullIO<
     pub oracle: O,
     pub tx_number: u32,
     pub da_commitment_scheme: Option<DACommitmentScheme>,
+    /// PoC: chain whose reads (storage/account/code) are served from while a
+    /// foreign static call is executing (`None` = local, normal behavior).
+    pub foreign_read_chain: Option<U256>,
+    /// PoC: one storage model per foreign chain (a read-only "forest" of trees).
+    /// The foreign frame's account/code/storage reads go here and are verified at
+    /// the seal against each chain's committed foreign state root.
+    pub foreign_storage: BTreeMap<U256, M>,
+    /// PoC: committed foreign state root per chain — the dedicated input a foreign
+    /// read is anchored to (distinct from interop/message roots). Read when a
+    /// foreign read scope is entered.
+    pub foreign_state_roots: BTreeMap<U256, Bytes32>,
 }
 
 pub struct FullIOStateSnapshot<M: StorageModel> {
@@ -70,6 +82,19 @@ impl<
         A: Allocator + Clone + Default,
         R: Resources,
         P: StorageAccessPolicy<R, Bytes32>,
+        SF: StackFactory<N>,
+        const N: usize,
+        O: IOOracle,
+        M: StorageModel<IOTypes = EthereumIOTypesConfig, Resources = R, InitData = P, Allocator = A>,
+        const PROOF_ENV: bool,
+    > FullIO<A, R, P, SF, N, O, M, PROOF_ENV>
+{
+}
+
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32> + Default,
         SF: StackFactory<N>,
         const N: usize,
         O: IOOracle,
@@ -105,6 +130,13 @@ impl<
             self.transient_storage.apply_read(&key, &mut result)?;
 
             Ok(result)
+        } else if let Some(chain_id) = self.foreign_read_chain {
+            // Inside a foreign static call: serve this read from the foreign
+            // chain's own storage model (verified at the seal against its root).
+            self.foreign_storage
+                .get_mut(&chain_id)
+                .expect("foreign read scope not started")
+                .storage_read(ee_type, resources, address, key, &mut self.oracle)
         } else {
             self.storage
                 .storage_read(ee_type, resources, address, key, &mut self.oracle)
@@ -243,6 +275,31 @@ impl<
         resources.charge(&to_charge)?;
 
         self.interop_root_storage.push_root(interop_root)
+    }
+
+    fn begin_foreign_read_scope(&mut self, chain_id: U256) -> Option<U256> {
+        use zk_ee::common_structs::foreign_read::{ForeignStateRootQuery, SelectForeignChainQuery};
+        use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+        // One storage model per foreign chain (created fresh per block).
+        let alloc = self.allocator.clone();
+        self.foreign_storage
+            .entry(chain_id)
+            .or_insert_with(|| M::construct(P::default(), alloc.clone()));
+        let cid = chain_id.as_limbs()[0];
+        // Bring in this chain's committed foreign state root (the dedicated input).
+        let root = ForeignStateRootQuery::get(&mut self.oracle, &cid).expect("foreign state root");
+        self.foreign_state_roots.insert(chain_id, root);
+        // Route subsequent reads (storage/account/code) to this chain's tree.
+        SelectForeignChainQuery::get(&mut self.oracle, &cid).expect("select foreign chain");
+        self.foreign_read_chain.replace(chain_id)
+    }
+
+    fn end_foreign_read_scope(&mut self, previous: Option<U256>) {
+        use zk_ee::common_structs::foreign_read::SelectForeignChainQuery;
+        use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+        let cid = previous.map(|c| c.as_limbs()[0]).unwrap_or(0);
+        SelectForeignChainQuery::get(&mut self.oracle, &cid).expect("reset foreign chain");
+        self.foreign_read_chain = previous;
     }
 
     fn update_settlement_layer_chain_id(
@@ -512,6 +569,9 @@ impl<
             tx_number: 0u32,
             da_commitment_scheme,
             new_settlement_layer_chain_id_storage,
+            foreign_read_chain: None,
+            foreign_storage: BTreeMap::new(),
+            foreign_state_roots: BTreeMap::new(),
         };
 
         Ok(new)
@@ -603,8 +663,22 @@ impl<
         >,
         SystemError,
     > {
-        self.storage
-            .read_account_properties(ee_type, resources, address, request, &mut self.oracle)
+        if let Some(chain_id) = self.foreign_read_chain {
+            // Foreign static call: load the callee's account + code from the
+            // foreign chain's state (verified at the seal against its root).
+            self.foreign_storage
+                .get_mut(&chain_id)
+                .expect("foreign read scope not started")
+                .read_account_properties(ee_type, resources, address, request, &mut self.oracle)
+        } else {
+            self.storage.read_account_properties(
+                ee_type,
+                resources,
+                address,
+                request,
+                &mut self.oracle,
+            )
+        }
     }
 
     fn transfer_nominal_token_value(
@@ -734,7 +808,7 @@ impl<
 impl<
         A: Allocator + Clone + Default,
         R: Resources,
-        P: StorageAccessPolicy<R, Bytes32>,
+        P: StorageAccessPolicy<R, Bytes32> + Default,
         SF: StackFactory<N>,
         const N: usize,
         O: IOOracle,
@@ -821,5 +895,32 @@ impl<
     ) {
         self.storage
             .update_commitment(state_commitment, &mut self.oracle, logger, result_keeper);
+
+        // PoC: verify each foreign chain's reads (account + code + storage) against
+        // its committed interop root, reusing the real flat-tree verifier. SELECT
+        // routes the model's index/proof oracle queries to that chain's tree.
+        use zk_ee::common_structs::foreign_read::SelectForeignChainQuery;
+        use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+        let chain_ids: alloc::vec::Vec<U256> = self.foreign_storage.keys().copied().collect();
+        for chain_id in chain_ids {
+            let root = *self
+                .foreign_state_roots
+                .get(&chain_id)
+                .expect("foreign state root for a chain that was read");
+            let cid = chain_id.as_limbs()[0];
+            SelectForeignChainQuery::get(&mut self.oracle, &cid).expect("select foreign chain");
+            let mut commitment = M::commitment_from_state_root(root);
+            let foreign = self
+                .foreign_storage
+                .get_mut(&chain_id)
+                .expect("foreign storage model");
+            foreign.update_commitment(
+                Some(&mut commitment),
+                &mut self.oracle,
+                logger,
+                result_keeper,
+            );
+            SelectForeignChainQuery::get(&mut self.oracle, &0u64).expect("reset foreign chain");
+        }
     }
 }
