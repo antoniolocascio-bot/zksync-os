@@ -150,6 +150,8 @@ pub fn mock_oracle() -> (
         forward_system::run::make_oracle_for_proofs_and_dumps_for_init_data(
             block_level,
             tree,
+            std::collections::BTreeMap::new(),
+            std::collections::BTreeMap::new(),
             InMemoryPreimageSource {
                 inner: HashMap::new(),
             },
@@ -216,6 +218,8 @@ pub fn mock_oracle_balance(
         forward_system::run::make_oracle_for_proofs_and_dumps_for_init_data(
             block_level,
             tree,
+            std::collections::BTreeMap::new(),
+            std::collections::BTreeMap::new(),
             preimage_source,
             TxListSource {
                 transactions: VecDeque::new(),
