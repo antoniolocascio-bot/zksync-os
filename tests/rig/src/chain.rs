@@ -5,7 +5,7 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy_rlp::{Decodable, Encodable};
 use basic_bootloader::bootloader::block_flow::ethereum::PectraForkHeader;
 use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
-use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
+use basic_bootloader::bootloader::config::BasicBootloaderForwardSimulationConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use basic_bootloader::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
@@ -671,9 +671,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         // forward run
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
-        // we use proving config here for benchmarking,
-        // although sequencer can have extra optimizations
-        run_forward_no_panic::<BasicBootloaderProvingExecutionConfig>(
+        // PORT (sequencer-mode benchmark): forward simulation config so the
+        // forward run skips per-tx `ecrecover` — signatures are verified at
+        // mempool ingress on the real sequencer. ECRECOVER_NATIVE_COST is still
+        // charged for accounting parity; only the recovery compute is skipped.
+        // Mirrors the alo/684-review-followups benchmark's
+        // `validate_eoa_signature = false` so this is apples-to-apples.
+        run_forward_no_panic::<BasicBootloaderForwardSimulationConfig>(
             forward_oracle,
             &mut result_keeper,
             tracer,

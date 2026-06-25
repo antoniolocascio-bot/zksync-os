@@ -12,3 +12,9 @@ categories.workspace = true
 [dependencies]
 rig = { path = "../../rig", features = ["for_tests"] }
 zksync_os_tests_common = { path = "../../common" }
+
+[features]
+# Gates the synthetic native-transfer single-block benchmark
+# (`native_transfers_single_block`). Pulls in `rig/no_print` so the bootloader's
+# `system_log!` traces don't dominate stdout during timed runs.
+forward-flamegraph = ["rig/no_print"]
