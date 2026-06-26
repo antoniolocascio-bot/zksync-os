@@ -165,9 +165,10 @@ fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
 fn build_native_transfer_bench(
     n_accounts: usize,
     m_total: usize,
-) -> (TestingFramework, Vec<ZKsyncTxEnvelope>) {
+) -> (TestingFramework, Vec<rig::zksync_os_interface::traits::EncodedTx>) {
     use alloy::primitives::{Address, U160, U256 as AlloyU256};
     use rig::zk_ee::common_structs::DACommitmentScheme;
+    use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 
     assert!(n_accounts > 0 && m_total > 0, "N and M must be positive");
 
@@ -227,7 +228,12 @@ fn build_native_transfer_bench(
     // every replay identical.
     tester.disable_minting_tokens_to_treasury();
 
-    (tester, txs)
+    // Encode ONCE here, outside any timed region: this mirrors the work a
+    // sequencer does at block-building time, and it carries the precomputed
+    // transaction hash that the forward run reads from the oracle.
+    let encoded = txs.into_iter().map(ZKsyncOsEncodable::encode).collect();
+
+    (tester, encoded)
 }
 
 /// Asserts every transfer in `output` executed successfully — a revert or
@@ -274,23 +280,26 @@ fn native_transfers_single_block() {
     let clock_ghz: f64 = env_or("BENCH_CLOCK_GHZ", DEFAULT_CLOCK_GHZ);
 
     println!("Building {m_total} transfers across {n_accounts} senders...");
-    let (mut tester, txs) = build_native_transfer_bench(n_accounts, m_total);
+    // `encoded` is already `Vec<EncodedTx>` — transactions are encoded ONCE,
+    // here, outside the timed region (see `build_native_transfer_bench`).
+    let (mut tester, encoded) = build_native_transfer_bench(n_accounts, m_total);
 
     // Warm up (untimed) and sanity-check correctness on the first run.
-    assert_all_succeeded(&tester.execute_block(txs.clone()), m_total);
-    let _ = tester.execute_block(txs.clone());
+    assert_all_succeeded(&tester.execute_block_encoded(encoded.clone()), m_total);
+    let _ = tester.execute_block_encoded(encoded.clone());
 
-    // Time individual single-block executions. Clone happens OUTSIDE the timed
-    // region so we measure only `execute_block` (parse + execute + finalize).
+    // Time individual single-block executions. The clone happens OUTSIDE the
+    // timed region, and transactions are pre-encoded, so we measure only the
+    // forward-run STF execution (parse + execute + finalize) — no RLP encoding.
     let mut block_us: Vec<f64> = Vec::with_capacity(runs);
     let mut last_output = None;
     for _ in 0..runs {
-        let txs_i = txs.clone();
+        let txs_i = encoded.clone();
         let t0 = Instant::now();
-        let out = tester.execute_block(txs_i);
+        let out = tester.execute_block_encoded(txs_i);
         block_us.push(t0.elapsed().as_secs_f64() * 1e6);
         // Retain the result *after* the timing capture so the timed region is
-        // still just `execute_block`; the move into the Option is untimed.
+        // still just `execute_block_encoded`; the move into the Option is untimed.
         last_output = Some(out);
     }
     // Correctness check on a *measured* run too (excluded from timing): confirms

@@ -52,6 +52,7 @@ use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zksync_os_api;
 pub use zksync_os_interface;
+use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::types::BlockOutput;
 use zksync_os_revm_runner::revm_runner::RevmRunner;
 pub use zksync_os_tests_common;
@@ -195,7 +196,6 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<BlockOutput, BootloaderSubsystemError> {
-        let run_config = self.run_config.clone().unwrap_or_default();
         if !self.skip_minting_tokens_to_treasury {
             self.chain.mint_tokens_to_treasury();
         }
@@ -211,6 +211,42 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .map(ZKsyncTxEnvelope::encode)
             .collect::<Vec<_>>();
 
+        // Encoding is done above; the run itself is shared with the
+        // pre-encoded entry point used by benchmarks.
+        let block_output = self.run_encoded_block(encoded_txs, tracer, validator)?;
+
+        if let (Some(pre_block_chain), Some(transactions), Some(block_context)) = (
+            pre_block_chain,
+            transactions_for_revm,
+            block_context_for_revm,
+        ) {
+            self.run_revm_consistency_check(
+                pre_block_chain,
+                transactions,
+                block_context,
+                &block_output,
+            )
+            .map_err(|err| -> BootloaderSubsystemError {
+                log::error!("REVM consistency check failed: {err:#}");
+                zk_ee::internal_error!("REVM consistency check failed").into()
+            })?;
+        }
+
+        Ok(block_output)
+    }
+
+    /// Runs a block of already-encoded transactions and records it as the last
+    /// executed block. Shared by `execute_block_internal` (after it encodes) and
+    /// the pre-encoded `execute_block_encoded` entry point. Does not run the
+    /// REVM consistency check, which needs the typed `ZKsyncTxEnvelope`s.
+    #[allow(clippy::result_large_err)]
+    fn run_encoded_block(
+        &mut self,
+        encoded_txs: Vec<EncodedTx>,
+        tracer: &mut impl Tracer<ForwardRunningSystem>,
+        validator: &mut impl TxValidator<ForwardRunningSystem>,
+    ) -> Result<BlockOutput, BootloaderSubsystemError> {
+        let run_config = self.run_config.clone().unwrap_or_default();
         let (block_output, block_extra_stats, proof_input) =
             if let Some(oracle_factory) = &self.oracle_factory {
                 self.chain.run_block_with_extra_stats_with_oracle_factory(
@@ -239,24 +275,21 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             proof_input,
         });
 
-        if let (Some(pre_block_chain), Some(transactions), Some(block_context)) = (
-            pre_block_chain,
-            transactions_for_revm,
-            block_context_for_revm,
-        ) {
-            self.run_revm_consistency_check(
-                pre_block_chain,
-                transactions,
-                block_context,
-                &block_output,
-            )
-            .map_err(|err| -> BootloaderSubsystemError {
-                log::error!("REVM consistency check failed: {err:#}");
-                zk_ee::internal_error!("REVM consistency check failed").into()
-            })?;
-        }
-
         Ok(block_output)
+    }
+
+    /// Executes a block of already-`EncodedTx` transactions with a no-op tracer
+    /// and validator. Encoding is the caller's responsibility, which lets
+    /// benchmarks encode once *outside* the timed region and measure only the
+    /// forward-run execution.
+    pub fn execute_block_encoded(&mut self, encoded_txs: Vec<EncodedTx>) -> BlockOutput {
+        if !self.skip_minting_tokens_to_treasury {
+            self.chain.mint_tokens_to_treasury();
+        }
+        let mut tracer = NopTracer::default();
+        let mut validator = NopTxValidator;
+        self.run_encoded_block(encoded_txs, &mut tracer, &mut validator)
+            .unwrap_or_else(|err| panic!("block execution failed: {err:?}"))
     }
 
     /// Builder: sets the chain ID used for block metadata and transaction signing.
