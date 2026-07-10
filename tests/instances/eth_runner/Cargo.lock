@@ -5834,6 +5834,8 @@ dependencies = [
  "oracle_provider",
  "risc_v_simulator",
  "ruint",
+ "serde",
+ "serde_json",
  "system_hooks",
  "zk_ee",
  "zksync_os_api",
