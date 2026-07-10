@@ -60,6 +60,19 @@ eth_stf = ["basic_bootloader/eip-7702","basic_bootloader/eip_7623", "evm_interpr
 # Features used for evm_tester
 evm_tester = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/eip-7702", "system_hooks/p256_precompile", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native", "basic_bootloader/eip-4844"]
 
+# Production-semantics variant of `evm_tester`, used to generate second-prover
+# corpus state dumps. Keeps only the harness-required tester accommodations —
+# `resources_for_tester` + `unlimited_native` (fixture-scale gas prices make
+# production native-per-gas pricing meaningless, and disabling native metering
+# keeps `gas_used` purely EVM-defined) — on top of the `production` set
+# (eip-7702 + p256_precompile). Drops the semantics-changing tester features:
+# burn_base_fee, mock-unsupported-precompiles, eip-4844, zk_ee/prevrandao and
+# disable_system_contracts, so execution matches production. Many fixture
+# post-state verdicts fail under this feature set (Ethereum-vs-production
+# semantics gap); that is expected — only block execution and the state dumps
+# matter.
+evm_tester_prod = ["basic_bootloader/resources_for_tester", "production", "unlimited_native"]
+
 # Features used for legacy evm_tester. Only defined in forward system,
 # as the legacy evm_tester does not perform a proof run.
 evm_tester_legacy = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/eip-7702", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native"]

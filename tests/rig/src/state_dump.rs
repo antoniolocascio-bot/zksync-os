@@ -62,6 +62,9 @@ pub(crate) struct PreBlockSnapshot {
 struct TxDump {
     signed: String,
     gas_used: u64,
+    /// True when the native `tx_result` for this tx is `Err`: the tx was in
+    /// the block's input list but was not executed (invalid / filtered).
+    failed: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -222,6 +225,7 @@ pub(crate) fn write_block_dump(
         .map(|(signed, result)| TxDump {
             signed,
             gas_used: result.as_ref().map(|output| output.gas_used).unwrap_or(0),
+            failed: result.is_err(),
         })
         .collect();
 
