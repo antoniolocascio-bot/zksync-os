@@ -147,6 +147,17 @@ struct BlockDump {
     native_header: NativeHeaderDump,
     native_header_hash: String,
     block_hashes_blake_before: String,
+    // Pre-block chain-state inputs of the STF's state commitment, required
+    // for mid-chain blocks (block 2+ of multi-block cases) where they differ
+    // from the chain-start defaults. Together with tree_root_before,
+    // leaf_count_before and block_hashes_blake_before these are ALL the
+    // inputs of the native pre-block `ChainStateCommitment`.
+    /// Block number before this block (`block.number - 1`).
+    block_number_before: u64,
+    /// Timestamp of the last block executed before this one (0 at chain
+    /// start); the `last_block_timestamp` of the pre-block
+    /// `ChainStateCommitment` (== `proof_data.last_block_timestamp`).
+    last_block_timestamp_before: u64,
     previous_block_hashes: Vec<String>,
     // Authoritative native ground-truth commitments.
     native_state_before: String,
@@ -255,6 +266,8 @@ pub(crate) fn write_block_dump(
         native_header: NativeHeaderDump::from_header(native_header),
         native_header_hash: hex::encode(native_header.hash()),
         block_hashes_blake_before: hex::encode(last256_before),
+        block_number_before: snapshot.previous_block_number,
+        last_block_timestamp_before: snapshot.last_block_timestamp_before,
         previous_block_hashes,
         native_state_before: hex::encode(state_before),
         native_state_after: hex::encode(state_after),
