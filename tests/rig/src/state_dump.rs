@@ -159,6 +159,11 @@ struct BlockDump {
     /// `ChainStateCommitment` (== `proof_data.last_block_timestamp`).
     last_block_timestamp_before: u64,
     previous_block_hashes: Vec<String>,
+    /// Ring head: hash of block `number - 256` (all-zero for `number <= 256`).
+    /// Evicted from `previous_block_hashes` (= ring[1..256]) but still a
+    /// valid BLOCKHASH source at exactly the eviction boundary; consumers
+    /// cannot derive it from the ring's blake commitment alone.
+    block_hash_ring_head: String,
     // Authoritative native ground-truth commitments.
     native_state_before: String,
     native_state_after: String,
@@ -228,6 +233,7 @@ pub(crate) fn write_block_dump(
         .skip(1)
         .map(|h| hex::encode(h.to_be_bytes::<32>()))
         .collect();
+    let block_hash_ring_head = hex::encode(snapshot.block_hashes_before[0].to_be_bytes::<32>());
 
     let txs: Vec<TxDump> = snapshot
         .signed_txs
@@ -269,6 +275,7 @@ pub(crate) fn write_block_dump(
         block_number_before: snapshot.previous_block_number,
         last_block_timestamp_before: snapshot.last_block_timestamp_before,
         previous_block_hashes,
+        block_hash_ring_head,
         native_state_before: hex::encode(state_before),
         native_state_after: hex::encode(state_after),
         native_chain_config_hash: String::new(),
