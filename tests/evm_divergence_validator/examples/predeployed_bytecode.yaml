@@ -13,6 +13,11 @@ accounts:
   alice:
     balance: "1000000000000000000"
 
+block:
+  basefee: 1000
+  gas_limit: 30000000
+  timestamp: 1700000000
+
 steps:
   # Send 32 bytes of calldata = uint256(42), no function selector.
   - type: send_raw
